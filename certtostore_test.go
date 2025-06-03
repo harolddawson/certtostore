@@ -30,7 +30,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/certtostore/testdata"
+	"github.com/harolddawson/certtostore/testdata"
 )
 
 // TODO(b/142911419): Create OS specific test packages to cover each
