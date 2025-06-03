@@ -42,10 +42,10 @@ import (
 	"unsafe"
 
 	"github.com/google/deck"
-	"golang.org/x/crypto/cryptobyte/asn1"
-	"golang.org/x/crypto/cryptobyte"
-	"golang.org/x/sys/windows"
 	"github.com/hashicorp/go-multierror"
+	"golang.org/x/crypto/cryptobyte"
+	"golang.org/x/crypto/cryptobyte/asn1"
+	"golang.org/x/sys/windows"
 )
 
 // WinCertStorage provides windows-specific additions to the CertStorage interface.
@@ -68,7 +68,7 @@ type WinCertStorage interface {
 	// such as looking up the private key with CertKey().
 	//
 	// You must call FreeCertContext on the context after use.
-	CertWithContext() (*x509.Certificate, *windows.CertContext, error)
+	CertWithContext(prev *windows.CertContext) (*x509.Certificate, *windows.CertContext, error)
 
 	// CertKey wraps CryptAcquireCertificatePrivateKey. It obtains the CNG private
 	// key of a known certificate and returns a pointer to a Key which implements
@@ -424,7 +424,7 @@ func (w *WinCertStore) resolveChains(cert *windows.CertContext) error {
 
 // Cert returns the current cert associated with this WinCertStore or nil if there isn't one.
 func (w *WinCertStore) Cert() (*x509.Certificate, error) {
-	c, ctx, err := w.CertWithContext()
+	c, ctx, err := w.CertWithContext(nil)
 	if err != nil {
 		return nil, err
 	}
@@ -438,8 +438,8 @@ func (w *WinCertStore) Cert() (*x509.Certificate, error) {
 // such as looking up the private key with CertKey().
 //
 // You must call FreeCertContext on the context after use.
-func (w *WinCertStore) CertWithContext() (*x509.Certificate, *windows.CertContext, error) {
-	c, ctx, err := w.cert(w.issuers, my, w.storeDomain())
+func (w *WinCertStore) CertWithContext(prev *windows.CertContext) (*x509.Certificate, *windows.CertContext, error) {
+	c, ctx, err := w.cert(prev, w.issuers, my, w.storeDomain())
 	if err != nil {
 		return nil, nil, err
 	}
@@ -455,13 +455,13 @@ func (w *WinCertStore) CertWithContext() (*x509.Certificate, *windows.CertContex
 
 // cert is a helper function to lookup certificates based on a known issuer.
 // store is used to specify which store to perform the lookup in (system or user).
-func (w *WinCertStore) cert(issuers []string, searchRoot *uint16, store uint32) (*x509.Certificate, *windows.CertContext, error) {
+func (w *WinCertStore) cert(prev *windows.CertContext, issuers []string, searchRoot *uint16, store uint32) (*x509.Certificate, *windows.CertContext, error) {
 	h, err := w.storeHandle(store, searchRoot)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	var prev *windows.CertContext
+	// var prev *windows.CertContext
 	var cert *x509.Certificate
 	for _, issuer := range issuers {
 		i, err := windows.UTF16PtrFromString(issuer)
@@ -525,7 +525,7 @@ func (w *WinCertStore) Close() error {
 
 // Link will associate the certificate installed in the system store to the user store.
 func (w *WinCertStore) Link() error {
-	cert, _, err := w.cert(w.issuers, my, certStoreLocalMachine)
+	cert, _, err := w.cert(nil, w.issuers, my, certStoreLocalMachine)
 	if err != nil {
 		return fmt.Errorf("checking for existing machine certificates returned: %v", err)
 	}
@@ -535,7 +535,7 @@ func (w *WinCertStore) Link() error {
 	}
 
 	// If the user cert is already there and matches the system cert, return early.
-	userCert, _, err := w.cert(w.issuers, my, certStoreCurrentUser)
+	userCert, _, err := w.cert(nil, w.issuers, my, certStoreCurrentUser)
 	if err != nil {
 		return fmt.Errorf("checking for existing user certificates returned: %v", err)
 	}
@@ -626,7 +626,7 @@ func (w *WinCertStore) linkLegacy() error {
 	}
 	deck.Info("Linking legacy key to the user private store.")
 
-	cert, context, err := w.cert(w.issuers, my, certStoreLocalMachine)
+	cert, context, err := w.cert(nil, w.issuers, my, certStoreLocalMachine)
 	if err != nil {
 		return fmt.Errorf("cert lookup returned: %v", err)
 	}
@@ -744,14 +744,14 @@ func RemoveCertByContext(certContext *windows.CertContext) error {
 // Intermediate returns the current intermediate cert associated with this
 // WinCertStore or nil if there isn't one.
 func (w *WinCertStore) Intermediate() (*x509.Certificate, error) {
-	c, _, err := w.cert(w.intermediateIssuers, my, w.storeDomain())
+	c, _, err := w.cert(nil, w.intermediateIssuers, my, w.storeDomain())
 	return c, err
 }
 
 // Root returns the certificate issued by the specified issuer from the
 // root certificate store 'ROOT/Certificates'.
 func (w *WinCertStore) Root(issuer []string) (*x509.Certificate, error) {
-	c, _, err := w.cert(issuer, root, w.storeDomain())
+	c, _, err := w.cert(nil, issuer, root, w.storeDomain())
 	return c, err
 }
 
